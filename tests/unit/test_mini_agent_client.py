@@ -141,6 +141,27 @@ class TestMiniAgentClientSuccess:
         assert "--approval" in cmd
         assert cmd[cmd.index("--approval") + 1] == "auto"
 
+    def test_run_passes_no_welcome(self, tmp_path):
+        client = _make_mini_client(tmp_path)
+        with patch("subprocess.Popen", return_value=_FakePopen()) as mock_popen:
+            client.run(agent_name="t", system_prompt="s", user_message="m")
+        cmd = mock_popen.call_args[0][0]
+        assert "--no-welcome" in cmd
+
+    def test_run_max_steps_override(self, tmp_path):
+        client = _make_mini_client(tmp_path)  # default max_steps=10
+        with patch("subprocess.Popen", return_value=_FakePopen()) as mock_popen:
+            client.run(agent_name="t", system_prompt="s", user_message="m", max_steps=1)
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[cmd.index("--max-steps") + 1] == "1"
+
+    def test_run_max_steps_default_when_not_overridden(self, tmp_path):
+        client = _make_mini_client(tmp_path)  # default max_steps=10
+        with patch("subprocess.Popen", return_value=_FakePopen()) as mock_popen:
+            client.run(agent_name="t", system_prompt="s", user_message="m")
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[cmd.index("--max-steps") + 1] == "10"
+
     def test_run_uses_correct_model(self, tmp_path):
         client = _make_mini_client(tmp_path)
         with patch("subprocess.Popen", return_value=_FakePopen()) as mock_popen:

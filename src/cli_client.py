@@ -393,23 +393,6 @@ class OpenCodeClient:
 _FINAL_TAG_RE = re.compile(r"<final>(.*?)</final>", re.DOTALL | re.IGNORECASE)
 
 
-def _strip_mini_agent_banner(text: str) -> str:
-    """Remove the mini-coding-agent ASCII banner from the start of *text*.
-
-    The banner is a contiguous block of lines at the top of stdout where every
-    line begins with ``+`` or ``|`` (box-drawing characters).  We drop those
-    lines plus any blank lines that follow.
-    """
-    lines = text.split("\n")
-    i = 0
-    while i < len(lines) and lines[i].startswith(("+", "|")):
-        i += 1
-    # Skip blank lines between banner and payload
-    while i < len(lines) and not lines[i].strip():
-        i += 1
-    return "\n".join(lines[i:])
-
-
 class MiniAgentClient:
     """
     Calls mini-coding-agent-CLI (https://github.com/xhyccc/mini-coding-agent-CLI)
@@ -469,13 +452,17 @@ class MiniAgentClient:
         bash_allowed: bool = False,
         on_event: Optional[Callable[[dict], None]] = None,
         workspace_dir: Optional[Path] = None,
+        max_steps: Optional[int] = None,
     ) -> str:
         """
         Invoke mini-coding-agent-CLI in one-shot mode and return the response.
 
         Parameters mirror :meth:`OpenCodeClient.run`.  The ``workspace_dir``
         parameter (not present on OpenCodeClient) sets ``--cwd``; when omitted
-        the current working directory is used.
+        the current working directory is used.  ``max_steps`` overrides
+        ``self.max_steps`` for this single call — pass ``max_steps=1`` for
+        pure-generation tasks (e.g. synthesis) that need no tool calls, to
+        avoid transcript-compaction errors on large prompts.
 
         Emits synthetic ``{"type": "text", "part": {"text": line}}`` events via
         *on_event* for each non-empty line of stdout, preserving compatibility
@@ -487,8 +474,7 @@ class MiniAgentClient:
             If the subprocess times out or exits with a non-zero code.
         """
         effective_model = model or self.default_model or "moonshot-v1-128k"
-
-        # Build task: prepend system prompt, optionally inline files.
+        effective_max_steps = max_steps if max_steps is not None else self.max_steps
         task_parts: List[str] = []
         if system_prompt.strip():
             task_parts.append(system_prompt.rstrip())
@@ -522,6 +508,7 @@ class MiniAgentClient:
 
         cmd = [
             self.mini_agent_cmd,
+            "--no-welcome",
             "--backend", "openai",
             "--openai-api-key", self.api_key,
             "--openai-base-url", self.base_url,
@@ -529,7 +516,7 @@ class MiniAgentClient:
             "--model", effective_model,
             "--approval", "auto",
             "--allow", *allow_cats,
-            "--max-steps", str(self.max_steps),
+            "--max-steps", str(effective_max_steps),
             "--max-new-tokens", str(self.max_new_tokens),
             "--cwd", cwd_arg,
             full_task,
@@ -653,10 +640,10 @@ class MiniAgentClient:
     def _extract_text(self, stdout: str) -> str:
         """Extract the agent's final answer from mini-agent stdout.
 
-        Strips the mini-coding-agent ASCII banner first, then looks for the
-        last ``<final>…</final>`` block; falls back to the remaining stdout.
+        Looks for the last ``<final>…</final>`` block; falls back to the
+        full stdout.  Banner suppression is handled by ``--no-welcome``.
         """
-        cleaned = _strip_mini_agent_banner(stdout).strip()
+        cleaned = stdout.strip()
         matches = _FINAL_TAG_RE.findall(cleaned)
         if matches:
             return matches[-1].strip()
