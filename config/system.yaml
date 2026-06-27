@@ -1,6 +1,10 @@
 ui:
   language: zh   # zh = Chinese prompts/UI | en = English prompts/UI
 
+# Disease context: "oncology" for tumor MDT, "pa" for Primary Aldosteronism diagnosis.
+# Switches prompt directories (prompts/{disease}/) and specialist registry.
+disease: pa
+
 opencode:
   backend: mini_agent        # agent backend: opencode | mini_agent (overridden by AGENT_BACKEND in .env)
   max_workers: 2
@@ -16,26 +20,43 @@ paths:
   prompts_dir: prompts
   workspace_name: .mdt_workspace
 specialists:
-- file_categories:
-  - 影像
-  name: 影像科
-- file_categories:
-  - 病理
-  name: 病理科
-- file_categories:
-  - 检验
-  - 病历
-  - 既往治疗
-  name: 肿瘤内科
-- file_categories:
-  - 影像
-  - 病理
-  - 检验
-  name: 外科
-- file_categories:
-  - 检验
-  - 病历
-  name: 内科
+  oncology:
+  - file_categories:
+    - 影像
+    name: 影像科
+  - file_categories:
+    - 病理
+    name: 病理科
+  - file_categories:
+    - 检验
+    - 病历
+    - 既往治疗
+    name: 肿瘤内科
+  - file_categories:
+    - 影像
+    - 病理
+    - 检验
+    name: 外科
+  - file_categories:
+    - 检验
+    - 病历
+    name: 内科
+  pa:
+  - file_categories:
+    - 激素检测
+    - 病历
+    name: 激素分析模块
+  - file_categories:
+    - 功能试验
+    - 病历
+    name: 功能试验模块
+  - file_categories:
+    - 质谱检测
+    name: 质谱分析模块
+  - file_categories:
+    - 影像学检查
+    - 病历
+    name: 影像分析模块
 workflow:
   enable_debate: true
   rounds:

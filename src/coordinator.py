@@ -33,9 +33,14 @@ def _load_config(config_path: Path) -> Dict[str, Any]:
 
 
 def _load_prompt(prompt_path: Path, lang: str = "zh") -> str:
-    """Load prompt from prompt_path; if lang=="en" try prompts/en/ variant first."""
+    """Load prompt from prompt_path; if lang=="en" try the en/ disease-subdir variant first.
+
+    prompt_path is expected to be ``prompts/{disease}/coordinator_xxx.md``.
+    For English, we look for ``prompts/en/{disease}/coordinator_xxx.md``.
+    """
     if lang == "en":
-        en_path = prompt_path.parent.parent / "en" / prompt_path.name
+        disease_dir = prompt_path.parent.name   # "pa" or "oncology"
+        en_path = prompt_path.parent.parent / "en" / disease_dir / prompt_path.name
         if en_path.exists():
             return en_path.read_text(encoding="utf-8")
     return prompt_path.read_text(encoding="utf-8")
@@ -106,7 +111,9 @@ class Coordinator:
     config_path:
         Path to config/system.yaml.
     prompts_dir:
-        Root directory containing coordinator and specialist prompts.
+        Root directory containing disease-specific prompt subdirectories.
+    lang:
+        UI/prompt language override (zh/en). Falls back to config.
     """
 
     def __init__(
@@ -115,10 +122,10 @@ class Coordinator:
         config_path: Path = Path("config/system.yaml"),
         prompts_dir: Path = Path("prompts"),
         lang: Optional[str] = None,
+        disease: Optional[str] = None,
     ) -> None:
         self.bus = bus
         self.config_path = config_path
-        self.prompts_dir = prompts_dir
 
         cfg = _load_config(config_path)
         oc_cfg = cfg.get("opencode", {})
@@ -127,9 +134,23 @@ class Coordinator:
         self.coordinator_timeout: int = oc_cfg.get("coordinator_timeout", self.timeout)
         self.synthesis_timeout: int = oc_cfg.get("synthesis_timeout", self.coordinator_timeout)
         self.coordinator_retries: int = oc_cfg.get("coordinator_retries", 1)
-        self.registered_specialists: List[Dict[str, Any]] = cfg.get("specialists", [])
+
         # Language: explicit arg > config ui.language > default zh
         self.lang: str = lang or cfg.get("ui", {}).get("language", "zh")
+
+        # Disease context: CLI --disease arg > config disease > default "oncology"
+        self.disease: str = disease or cfg.get("disease", "oncology")
+        self.prompts_dir = prompts_dir / self.disease
+
+        # Specialist registry: keyed by disease in config for clean switching.
+        specialists_cfg = cfg.get("specialists", [])
+        if isinstance(specialists_cfg, dict):
+            self.registered_specialists: List[Dict[str, Any]] = specialists_cfg.get(
+                self.disease, []
+            )
+        else:
+            # Backward-compatible: flat list (pre-disease-switching configs)
+            self.registered_specialists = specialists_cfg
 
         self.client = make_agent_client(
             cfg=oc_cfg,
@@ -449,6 +470,7 @@ class Coordinator:
                 read_allowed=False,
                 bash_allowed=False,
                 on_event=on_event,
+                max_steps=1,
             ),
             step_name="run_synthesis",
         )

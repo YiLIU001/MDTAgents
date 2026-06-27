@@ -4,21 +4,33 @@ MDT-Orchestrator entry point.
 
 Usage:
     python -m src.main cases/demo_case
-    python src/main.py cases/demo_case
+    python -m src.main cases/demo_case --disease pa
+    python -m src.main cases/demo_case --disease oncology
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
 
-def main() -> None:
-    if len(sys.argv) < 2:
-        print("Usage: python -m src.main <case_folder>")
-        sys.exit(1)
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="MDT-Orchestrator")
+    parser.add_argument("case_folder", help="Path to the case folder")
+    parser.add_argument(
+        "--disease",
+        default=None,
+        choices=["oncology", "pa"],
+        help="Disease context: overrides config/system.yaml disease setting",
+    )
+    return parser.parse_args(argv[1:])
 
-    case_dir = Path(sys.argv[1]).resolve()
+
+def main() -> None:
+    args = _parse_args(sys.argv)
+
+    case_dir = Path(args.case_folder).resolve()
     if not case_dir.exists():
         raise FileNotFoundError(f"病例文件夹不存在: {case_dir}")
 
@@ -52,7 +64,11 @@ def main() -> None:
     print("[Main] Context extraction complete.")
 
     # ── Rounds 1–2: Coordinator index + dispatch (single LLM call) ────
-    coordinator = Coordinator(bus, config_path=config_path, prompts_dir=prompts_dir)
+    coordinator = Coordinator(
+        bus, config_path=config_path, prompts_dir=prompts_dir,
+        disease=args.disease,
+    )
+    print(f"[Main] Disease context: {coordinator.disease}")
     index, dispatch = coordinator.run_index_and_dispatch(manifest)
 
     # ── Build per-agent workspaces (deterministic, after dispatch) ─────
@@ -62,7 +78,7 @@ def main() -> None:
         print(f"  {name}: {ws}")
 
     # ── Round 3: Parallel specialist consultation ──────────────────────
-    pool = SpecialistPool(bus, config_path=config_path, prompts_dir=prompts_dir)
+    pool = SpecialistPool(bus, config_path=config_path, prompts_dir=coordinator.prompts_dir)
     opinions = pool.run_parallel(dispatch)
     print(f"[Main] Received {len(opinions)} specialist opinion(s).")
 
